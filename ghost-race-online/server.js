@@ -8,6 +8,8 @@ const PORT = +E.PORT || 3000, ROOM_CODE = E.ROOM_CODE || 'FANTASMA', MAX = 4;
 const LEVEL = Math.min(2, Math.max(0, (E.TRAFFIC_LEVEL === undefined || E.TRAFFIC_LEVEL === '' ? 1 : +E.TRAFFIC_LEVEL) | 0));
 const GRACE = (+E.RECONNECT_GRACE_S || 15) * 1000, ORIGINS = (E.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 const GOAL = +E.TEST_RACE_LENGTH || Core.GOAL; // TEST_RACE_LENGTH solo para pruebas automáticas
+// Recarga de la autodestrucción, en segundos y medida con el reloj del servidor. Cambia este valor por defecto o usa SELF_DESTRUCT_COOLDOWN_S.
+const SELF_DESTRUCT_COOLDOWN_S = +E.SELF_DESTRUCT_COOLDOWN_S > 0 ? +E.SELF_DESTRUCT_COOLDOWN_S : 10, SD_MS = SELF_DESTRUCT_COOLDOWN_S * 1000;
 if (!E.ROOM_CODE) console.warn('AVISO: usando el código por defecto "FANTASMA". Define ROOM_CODE.');
 
 // ---------- HTTP estático (carpeta public/) ----------
@@ -55,6 +57,10 @@ class Conn {
     else if (m.t === 'lane' && room.cd <= 0 && r.st === 'drive') {
       if ((m.d !== -1 && m.d !== 1) || !Number.isInteger(m.n) || m.n <= p.lastN) return; // acciones inválidas / duplicadas
       p.lastN = m.n; r.lane = Math.max(0, Math.min(3, r.lane + m.d));
+    } else if (m.t === 'boom' && room.cd <= 0 && r.st === 'drive') { // autodestrucción: el cliente solo la solicita; el servidor valida y controla la recarga
+      if (!Number.isInteger(m.n) || m.n <= p.lastN) return; p.lastN = m.n; // duplicados ignorados
+      const now = Date.now(); if (now < p.readyAt) return; // en recarga
+      if (r.selfDestruct()) p.readyAt = now + SD_MS; // consume la habilidad una sola vez (el estado es del jugador, no del vehículo)
     }
   }
 }
@@ -73,7 +79,7 @@ function lobbyMsg() {
   const m = { t: 'lobby', st: room.st, host: room.host, players: room.players.filter(Boolean).map(p => ({ id: p.slot, name: p.name, host: p.slot === room.host, on: !!live(p) })) };
   for (const p of room.players) { const c = live(p); if (c) c.send(m); }
 }
-function raceInfo(p) { const c = live(p); if (c) c.send({ t: 'race', players: [...room.racers.values()].map(r => ({ id: r.id, name: r.name })) }); }
+function raceInfo(p) { const c = live(p); if (c) c.send({ t: 'race', cool: SD_MS, players: [...room.racers.values()].map(r => ({ id: r.id, name: r.name })) }); }
 function join(c, m) {
   if (c.p) return;
   if (typeof m.code !== 'string' || !eq(m.code.trim(), ROOM_CODE)) { c.send({ t: 'badcode' }); if (++c.fails >= 5) c.close(); return; } // el código se comprueba SOLO aquí
@@ -83,7 +89,7 @@ function join(c, m) {
   if (p) { const old = p.conn; if (old && old !== c) { old.p = null; old.send({ t: 'kicked' }); old.close(); } p.conn = c; p.gone = 0; } // misma persona: reconexión o 2.ª pestaña => una sola plaza
   else {
     const slot = room.players.indexOf(null); if (slot < 0) { c.send({ t: 'full' }); c.close(); return; }
-    p = { slot, token, name, conn: c, gone: 0, joined: Date.now(), lastN: 0 }; room.players[slot] = p; if (room.host < 0) room.host = slot;
+    p = { slot, token, name, conn: c, gone: 0, joined: Date.now(), lastN: 0, readyAt: 0 }; room.players[slot] = p; if (room.host < 0) room.host = slot;
   }
   c.p = p; c.send({ t: 'welcome', id: p.slot });
   if (room.st === 'race' && room.racers.has(p.slot)) raceInfo(p);
@@ -102,7 +108,7 @@ function start(p) {
   if (p.slot !== room.host || room.st === 'race') return;
   const act = room.players.filter(live); if (act.length < 2) { live(p).send({ t: 'err', m: 'Hacen falta al menos 2 jugadores' }); return; }
   const w = new Core.World((Date.now() % 1e6) + 1, LEVEL); room.world = w; room.racers.clear();
-  for (const q of act) { q.lastN = 0; room.racers.set(q.slot, new Core.Racer(q.slot, { n: q.name, c: CFG[q.slot].c, b: CFG[q.slot].b }, false, w)); }
+  for (const q of act) { q.lastN = 0; q.readyAt = 0; /* habilidad cargada al empezar */ room.racers.set(q.slot, new Core.Racer(q.slot, { n: q.name, c: CFG[q.slot].c, b: CFG[q.slot].b }, false, w)); }
   room.st = 'race'; room.cd = 3; room.clock = 0; for (const q of act) raceInfo(q); lobbyMsg();
 }
 function finish(rs) { // rs ordenado por progreso (el primero gana)
@@ -112,10 +118,11 @@ function finish(rs) { // rs ordenado por progreso (el primero gana)
   for (const id of ids) { const c = live(room.players[id]); if (c) c.send({ t: 'end', rank }); }
   lobbyMsg();
 }
+const abil = r => { const p = room.players[r.id]; return p ? Math.max(0, p.readyAt - Date.now()) | 0 : 0; }; // ms de recarga restantes
 function snapshot(rs) {
   const w = room.world, m = {
     t: 's', cd: +Math.max(0, room.cd).toFixed(2), clock: +room.clock.toFixed(2),
-    r: rs.map(r => [r.id, KEYS.indexOf(r.type), +r.x.toFixed(1), Math.round(r.y), Math.round(r.st === 'ghost' && r.target ? 0 : r.v), r.hp, +r.inv.toFixed(2), r.st === 'ghost' ? 1 : 0, r.lane, r.expl, r.tp, +r.gt.toFixed(2)]),
+    r: rs.map(r => [r.id, KEYS.indexOf(r.type), +r.x.toFixed(1), Math.round(r.y), Math.round(r.st === 'ghost' && r.target ? 0 : r.v), r.hp, +r.inv.toFixed(2), r.st === 'ghost' ? 1 : 0, r.lane, r.expl, r.tp, +r.gt.toFixed(2), abil(r)]),
     v: w.tr.filter(t => !t.dead).map(t => [t.id, KEYS.indexOf(t.t), Math.round(t.x), Math.round(t.y), COLS.indexOf(t.col), Math.round(t.v)]), e: w.ev
   }; w.ev = [];
   const s = JSON.stringify(m); for (const r of rs) { const c = live(room.players[r.id]); if (c) c.sendRaw(s); }

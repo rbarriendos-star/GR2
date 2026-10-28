@@ -10,7 +10,16 @@ ahora el **servidor es la autoridad** y los navegadores envían sus órdenes (ca
 | `public/config.js` | Dirección del servidor (vacía = mismo dominio). |
 | `server.js` | HTTP estático + WebSocket + sala única. **Sin dependencias** (solo Node). |
 | `.env.example` | Variables de entorno. |
-| `test/smoke.js` | Prueba automática con jugadores simulados (`npm test`, Node ≥ 22). |
+| `test/smoke.js` | Prueba automática con jugadores simulados (`npm test`, Node ≥ 22), incluida la autodestrucción. |
+| `render.yaml` | Configuración opcional para Render (sin probar). |
+
+## Autodestrucción (tecla E o aro de la esquina)
+Abandona voluntariamente un vehículo lento: explota y el fantasma salta al vehículo libre más cercano por delante (mismo sistema de posesión que siempre).
+- Recarga de **10 s** medida por el **servidor** (`SELF_DESTRUCT_COOLDOWN_S` en `.env`, o la constante `SELF_DESTRUCT_COOLDOWN_S` al inicio de `server.js`).
+- El cliente solo *solicita* usarla; el servidor valida (carrera activa, vehículo en marcha, habilidad cargada) y consume la carga una sola vez. Clics repetidos o manipulados se rechazan.
+- La recarga es del **jugador**, no del vehículo: no se reinicia al cambiar de vehículo y se conserva al reconectar. Cada carrera empieza con la habilidad cargada.
+- El aro del cliente se dibuja con los milisegundos restantes que envía el servidor en cada instantánea (no hay un temporizador visual aparte).
+- La tecla E no entra en conflicto con otros controles (← → ↓). Mantenerla pulsada no la repite.
 
 ## Reglas de la sala
 - Una sola sala, 4 plazas, **código fijo** (`ROOM_CODE`) comprobado **solo en el servidor** (el cliente nunca lo contiene).

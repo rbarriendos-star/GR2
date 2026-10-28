@@ -50,7 +50,9 @@ class Racer{
  collide(){const T=this.T,w=this.world;if(this.inv>0)return;
   for(const t of w.tr){if(t.dead||t.held)continue;if(Math.abs(t.x-this.x)<(T.w*.9+t.w)/2&&Math.abs(t.y-this.y)<(T.l*.95+t.l)/2){
    const dmg=this.v-t.v>220?2:1;if(dmg<this.hp){t.dead=true;w.boom(t.x,t.y,16,.6)}w.snd('crash');this.hit(dmg,t);return}}}
- destroy(t){this.expl++;this.world.boom(this.x,this.y,70,1.4);this.world.snd('boom');this.st='ghost';this.gt=0;this.shake=.5;this.hp=0;this.target=t&&!t.dead?t:null;if(this.target)this.target.held=true}
+ destroy(t,vol){this.expl++;this.world.boom(this.x,this.y,70,1.4);this.world.snd('boom');this.st='ghost';this.gt=0;this.shake=.5;this.hp=0;this.target=t&&!t.dead?t:null;if(this.target)this.target.held=true;if(vol)this.world.ev.push(['flash',Math.round(this.x),Math.round(this.y),this.col])}
+ // Autodestrucción voluntaria: sin vehículo 'culpable', así que el fantasma busca el más cercano por delante (reglas de posesión de siempre)
+ selfDestruct(){if(this.st!=='drive')return false;this.destroy(null,true);return true}
  // Solo vehículos de tráfico vivos: nunca el vehículo que conduce el rival
  findTarget(){let best=null,bs=1e9;for(const t of this.world.tr){if(t.dead||t.held)continue;const dy=t.y-this.y;if(dy<=0||dy>700)continue;const s=dy+Math.abs(t.x-this.x)*.6;if(s<bs){bs=s;best=t}}return best}
  possess(t){const w=this.world;w.trail(this.x,this.y,t.x,t.y,this.col);w.ring(this.x,this.y,this.col);w.ring(t.x,t.y,this.col);

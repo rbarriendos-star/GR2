@@ -1,0 +1,14 @@
+# Opcional: configuración para Render (Blueprint). No probada: si falla, crea el servicio a mano (ver README).
+services:
+  - type: web
+    name: ghost-race
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: ROOM_CODE
+        sync: false
+      - key: TRAFFIC_LEVEL
+        value: "1"

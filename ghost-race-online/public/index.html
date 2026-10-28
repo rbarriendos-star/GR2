@@ -19,17 +19,36 @@ button.lv.sel{outline-color:#fff;background:#3a3a56}
 #pad button{flex:1;padding:18px;background:#223;touch-action:none;font-size:22px}
 @media (pointer:coarse){#pad{display:flex;max-width:640px;margin:0 auto}}
 input{font:inherit;padding:9px 12px;border-radius:8px;border:1px solid #445;background:#14141f;color:#fff;width:min(260px,70vw);text-align:center;margin:3px}ul{list-style:none;padding:0;margin:6px 0;width:min(320px,80vw)}li{padding:6px 10px;margin:3px 0;border-radius:6px;background:#1a1a28;display:flex;justify-content:space-between;font-size:14px}.h{display:none!important}#err{color:#ff7a7a;min-height:18px}button:disabled{opacity:.4;cursor:default}
+#sd{position:absolute;right:1.5%;bottom:7%;width:clamp(56px,12vw,76px);height:clamp(56px,12vw,76px);padding:0;border-radius:50%;background:rgba(8,10,24,.78);border:0;touch-action:manipulation;cursor:pointer}
+#sd svg{width:100%;height:100%;display:block}
+#sd .tr{fill:none;stroke:#1b2240;stroke-width:9}
+#sd .pg{fill:none;stroke:#2b8fb0;stroke-width:9;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100}
+#sd .ic{fill:#36e0ff;opacity:.22}
+#sd .lbl{fill:#bff3ff;font:700 11px system-ui;opacity:0}
+#sd span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 clamp(15px,3.6vw,22px) system-ui;color:#bff3ff;pointer-events:none}
+#sd.rld{opacity:.85;filter:grayscale(.4)}
+#sd.busy{opacity:.45}
+#sd.rdy{box-shadow:0 0 14px #36e0ff99;animation:sdg 1.6s ease-in-out infinite}
+#sd.rdy .pg{stroke:#36e0ff;filter:drop-shadow(0 0 4px #36e0ff)}
+#sd.rdy .ic{opacity:1;filter:drop-shadow(0 0 5px #36e0ff)}
+#sd.rdy .lbl{opacity:1}
+#sd.fire{animation:sdf .4s ease-out}
+#sd.pop{animation:sdp .7s ease-out}
+@keyframes sdg{50%{box-shadow:0 0 24px #36e0ffcc}}
+@keyframes sdf{0%{transform:scale(1)}30%{transform:scale(.8);box-shadow:0 0 34px #fff}100%{transform:scale(1)}}
+@keyframes sdp{0%{transform:scale(1)}40%{transform:scale(1.25);box-shadow:0 0 34px #36e0ff}100%{transform:scale(1)}}
 </style></head><body>
 <div id="wrap">
 <canvas id="c" width="640" height="786"></canvas>
 <button id="snd">Sonido: ON</button>
+<button id="sd" class="h" aria-label="Autodestrucción (tecla E)"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="tr" cx="50" cy="50" r="42"/><circle class="pg" id="sdp" cx="50" cy="50" r="42" pathLength="100" transform="rotate(-90 50 50)"/><path class="ic" transform="translate(50 40) scale(.62) translate(-50 -50)" d="M50 24l5 15 13-7-6 13 14 2-14 4 6 12-13-7-5 14-5-14-13 7 6-12-14-4 14-2-6-13 13 7z"/><text class="lbl" x="50" y="78" text-anchor="middle">LISTO</text></svg><span id="sdt"></span></button>
 <div id="menu" class="ov"><h1>GHOST RACE</h1><div style="letter-spacing:5px;color:var(--v)">POSSESSION RUN · ONLINE</div>
 <div id="jn"><p>Sala única para hasta 4 jugadores. Escribe tu nombre y el código de acceso.</p>
 <input id="nm" placeholder="Tu nombre" maxlength="12" autocomplete="nickname"><br><input id="cd" placeholder="Código de sala" maxlength="32" autocomplete="off"><br>
 <button id="go">ENTRAR</button></div>
 <div id="lb" class="h"><p id="cnt" style="font-weight:700"></p><ul id="pl"></ul><p id="msg"></p><button id="start" class="h">INICIAR CARRERA</button></div>
 <p id="err"></p>
-<p>Cada vehículo va a su velocidad: <b>← →</b> cambian de carril y <b>↓</b> frena. Si tu vehículo explota, saltas al vehículo contra el que has chocado.</p></div>
+<p>Cada vehículo va a su velocidad: <b>← →</b> cambian de carril, <b>↓</b> frena y <b>E</b> (o el aro de la esquina) autodestruye tu vehículo, con recarga. Si tu vehículo explota, saltas al vehículo contra el que has chocado.</p></div>
 <div id="end" class="ov h"><h1 id="win"></h1><p id="stats"></p><button id="back">VOLVER AL VESTÍBULO</button></div>
 </div>
 <div id="pad"><button data-k="l">◀</button><button data-k="b">▼ Frenar</button><button data-k="r">▶</button></div>
@@ -115,9 +134,9 @@ class FX{constructor(){this.tr=[];this.fx=[]}
  update(dt){for(const p of this.fx){p.life-=dt;if(p.k==='p'){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.97;p.vy*=.97}}this.fx=this.fx.filter(p=>p.life>0)}}
 
 const world=new FX(),esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
-let R=[],state='lobby',roomSt='lobby',cd=3,clock=0,myId=-1,hostId=-1,ws=null,seq=0,braking=false,retry=0,joined=false,wantJoin=false,plist=[],names={};
+let R=[],state='lobby',roomSt='lobby',cd=3,clock=0,myId=-1,hostId=-1,ws=null,seq=0,braking=false,retry=0,joined=false,wantJoin=false,plist=[],names={},coolMs=10000,sdWasReady=true;
 const E={r:new Map(),t:new Map()};
-class CR{constructor(id,name){const c=CFG[id];Object.assign(this,{id,name,col:c.c,body:c.b,type:'car',hp:2,inv:0,st:'drive',gt:0,expl:0,tp:0,v:0,lane:1,x:0,y:0,sx:0,sy:0,at:0,shake:0,world,human:id===myId})}get T(){return TYPES[this.type]}}
+class CR{constructor(id,name){const c=CFG[id];Object.assign(this,{id,name,col:c.c,body:c.b,type:'car',hp:2,inv:0,st:'drive',gt:0,expl:0,tp:0,v:0,lane:1,x:0,y:0,sx:0,sy:0,at:0,shake:0,ab:0,world,human:id===myId})}get T(){return TYPES[this.type]}}
 const rndTok=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
 let token;try{token=localStorage.getItem('gr_token');if(!token){token=rndTok();localStorage.setItem('gr_token',token)}}catch(e){token=rndTok()}
 const wsUrl=()=>(window.GHOST_WS||((location.protocol==='https:'?'wss://':'ws://')+location.host)).replace(/\/+$/,'').replace(/\/ws$/,'')+'/ws';
@@ -137,7 +156,7 @@ function onMsg(m){
  else if(m.t==='kicked')stop('Has entrado desde otra pestaña o dispositivo. Esta sesión se ha cerrado.');
  else if(m.t==='err')showErr(m.m);
  else if(m.t==='lobby'){plist=m.players;hostId=m.host;roomSt=m.st;renderLobby()}
- else if(m.t==='race'){names={};m.players.forEach(p=>names[p.id]=p.name);E.r.clear();E.t.clear();R=[];world.fx=[];world.tr=[];state='race';cd=3;clock=0;$('menu').classList.add('h');$('end').classList.add('h')}
+ else if(m.t==='race'){names={};coolMs=m.cool||coolMs;m.players.forEach(p=>names[p.id]=p.name);E.r.clear();E.t.clear();R=[];world.fx=[];world.tr=[];state='race';cd=3;clock=0;$('menu').classList.add('h');$('end').classList.add('h')}
  else if(m.t==='end')onEnd(m)}
 function renderLobby(){
  $('jn').classList.add('h');$('lb').classList.remove('h');if(state!=='race'&&$('end').classList.contains('h'))$('menu').classList.remove('h');
@@ -150,14 +169,14 @@ function onSnap(m){
  const now=performance.now();state='race';cd=m.cd;clock=m.clock;const seen=new Set();
  for(const a of m.r){const id=a[0];seen.add(id);let r=E.r.get(id);if(!r){r=new CR(id,names[id]||'?');r.x=a[2];r.y=a[3];r.hp=a[5];E.r.set(id,r)}
   const st=a[7]?'ghost':'drive';if(a[5]<r.hp)r.shake=.3;if(st==='ghost'&&r.st!=='ghost')r.shake=.5;
-  Object.assign(r,{type:KEYS[a[1]],sx:a[2],sy:a[3],v:a[4],hp:a[5],inv:a[6],st,lane:a[8],expl:a[9],tp:a[10],gt:a[11],at:now})}
+  Object.assign(r,{type:KEYS[a[1]],sx:a[2],sy:a[3],v:a[4],hp:a[5],inv:a[6],st,lane:a[8],expl:a[9],tp:a[10],gt:a[11],ab:a[12]||0,at:now})}
  for(const id of [...E.r.keys()])if(!seen.has(id))E.r.delete(id);
  const me=E.r.get(myId);R=[...(me?[me]:[]),...[...E.r.values()].filter(r=>r!==me).sort((a,b)=>a.id-b.id)];
  const st=new Set();
  for(const a of m.v){const id=a[0];st.add(id);let t=E.t.get(id);if(!t){t={id,t:KEYS[a[1]],col:COLS[a[4]],x:a[2],y:a[3],lane:Math.max(0,Math.min(3,Math.round((a[2]-X0)/LW-.5)))};E.t.set(id,t)}t.sx=a[2];t.sy=a[3];t.sv=a[5];t.at=now}
  for(const id of [...E.t.keys()])if(!st.has(id))E.t.delete(id);
  world.tr=[...E.t.values()];
- for(const e of m.e){const k=e[0];if(k==='boom')world.boom(e[1],e[2],e[3],e[4]);else if(k==='ring')world.ring(e[1],e[2],e[3]);else if(k==='trail')world.trail(e[1],e[2],e[3],e[4],e[5]);else if(k==='snd'&&['crash','boom','tp'].includes(e[1]))Snd[e[1]]()}}
+ for(const e of m.e){const k=e[0];if(k==='boom')world.boom(e[1],e[2],e[3],e[4]);else if(k==='ring')world.ring(e[1],e[2],e[3]);else if(k==='trail')world.trail(e[1],e[2],e[3],e[4],e[5]);else if(k==='flash'){world.ring(e[1],e[2],'#36e0ff');world.ring(e[1],e[2],e[3])}else if(k==='snd'&&['crash','boom','tp'].includes(e[1]))Snd[e[1]]()}}
 function onEnd(m){
  state='over';Snd.win();Snd.engine(0,false);braking=false;const w=m.rank[0];
  $('win').textContent=w.id===myId?'¡HAS GANADO!':'¡GANA '+w.name+'!';$('win').style.background='linear-gradient(90deg,'+CFG[w.id].c+',#fff)';$('win').style.webkitBackgroundClip='text';$('win').style.backgroundClip='text';
@@ -165,7 +184,7 @@ function onEnd(m){
 // Interpolación: se extrapola con la velocidad del servidor y se suaviza hacia la última posición recibida
 function smooth(e,dt){const v=e.sv!==undefined?e.sv:e.v,ty=e.sy+v*Math.min(.2,(performance.now()-e.at)/1000),k=Math.min(1,dt*14);
  if(Math.abs(ty-e.y)>180){e.y=ty;e.x=e.sx}else{e.y+=(ty-e.y)*k;e.x+=(e.sx-e.x)*k}}
-function update(dt){world.update(dt);for(const r of E.r.values()){smooth(r,dt);r.shake=Math.max(0,r.shake-dt)}for(const t of E.t.values())smooth(t,dt);
+function update(dt){sdUI();world.update(dt);for(const r of E.r.values()){smooth(r,dt);r.shake=Math.max(0,r.shake-dt)}for(const t of E.t.values())smooth(t,dt);
  if(R[0]&&state==='race')Snd.engine(R[0].v,true)}
 function render(){ctx.fillStyle='#07070d';ctx.fillRect(0,0,W,H);if(!R.length||R[0].id!==myId||(state!=='race'&&state!=='over'))return;game();topHud();
  ctx.textAlign='center';ctx.fillStyle='#fff';ctx.font='bold 90px system-ui';ctx.globalAlpha=.9;
@@ -173,14 +192,24 @@ function render(){ctx.fillStyle='#07070d';ctx.fillRect(0,0,W,H);if(!R.length||R[
  if(joined&&(!ws||ws.readyState!==1)){ctx.fillStyle='#ff7a7a';ctx.font='bold 16px system-ui';ctx.fillText('Reconectando…',W/2,PY+34)}}
 let last=0;function loop(t){const dt=Math.min(.05,(t-last)/1000||0);last=t;update(dt);render();requestAnimationFrame(loop)}
 // ---------- Entrada ----------
+// ---------- Autodestrucción: el aro refleja el estado REAL del servidor (ms de recarga restantes en cada instantánea) ----------
+const sdEl=$('sd');
+function sdAnim(c){sdEl.classList.remove('fire','pop');void sdEl.offsetWidth;sdEl.classList.add(c);setTimeout(()=>sdEl.classList.remove(c),700)}
+function sdRem(){const me=R[0];return me?Math.max(0,me.ab-(performance.now()-me.at)):0}
+function sdUI(){const me=R[0],on=state==='race'&&me&&me.id===myId;sdEl.classList.toggle('h',!on);if(!on){sdWasReady=true;return}
+ const rem=sdRem(),rdy=rem<=0;$('sdp').style.strokeDashoffset=String(100*rem/coolMs);$('sdt').textContent=rdy?'':Math.ceil(rem/1000);
+ sdEl.classList.toggle('rdy',rdy&&me.st==='drive'&&cd<=0);sdEl.classList.toggle('rld',!rdy);sdEl.classList.toggle('busy',rdy&&(me.st!=='drive'||cd>0));
+ if(rdy&&!sdWasReady)sdAnim('pop');sdWasReady=rdy}
+function boom(){if(state!=='race'||cd>0||!R[0]||R[0].st!=='drive'||sdRem()>0)return;sdAnim('fire');send({t:'boom',n:++seq})} // solo solicita; el servidor decide
 function press(k){if(state!=='race'||cd>0||!R[0])return;send({t:'lane',d:k==='l'?-1:1,n:++seq})}
 function setBrake(v){if(v!==braking){braking=v;send({t:'brake',v})}}
-addEventListener('keydown',e=>{if(e.target&&e.target.tagName==='INPUT')return;if(e.key==='ArrowDown'){e.preventDefault();setBrake(true);return}const k={ArrowLeft:'l',ArrowRight:'r'}[e.key];if(!k)return;e.preventDefault();if(!e.repeat)press(k)});
+addEventListener('keydown',e=>{if(e.target&&e.target.tagName==='INPUT')return;if(e.key==='e'||e.key==='E'){e.preventDefault();if(!e.repeat)boom();return}if(e.key==='ArrowDown'){e.preventDefault();setBrake(true);return}const k={ArrowLeft:'l',ArrowRight:'r'}[e.key];if(!k)return;e.preventDefault();if(!e.repeat)press(k)});
 addEventListener('keyup',e=>{if(e.key==='ArrowDown')setBrake(false)});
 document.querySelectorAll('#pad button').forEach(b=>{const k=b.dataset.k;b.addEventListener('pointerdown',e=>{e.preventDefault();if(k==='b')setBrake(true);else press(k)});['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,()=>{if(k==='b')setBrake(false)}))});
 try{$('nm').value=localStorage.getItem('gr_name')||''}catch(e){}
 $('go').onclick=()=>{if(wantJoin)return;Snd.init();try{localStorage.setItem('gr_name',$('nm').value)}catch(e){}showErr('');wantJoin=true;connect()};
 $('start').onclick=()=>send({t:'start'});
+sdEl.addEventListener('pointerdown',e=>{e.preventDefault();boom()});
 $('back').onclick=()=>{$('end').classList.add('h');state='lobby';R=[];renderLobby()};
 $('snd').onclick=()=>{Snd.on=!Snd.on;Snd.init();$('snd').textContent='Sonido: '+(Snd.on?'ON':'OFF');if(!Snd.on)Snd.engine(0,false)};
 requestAnimationFrame(loop);
