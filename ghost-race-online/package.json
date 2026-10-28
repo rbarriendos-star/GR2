@@ -1,0 +1,9 @@
+{
+  "name": "ghost-race-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GHOST RACE: Possession Run - sala online única para 4 jugadores (servidor autoritativo, sin dependencias)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "node test/smoke.js" },
+  "engines": { "node": ">=18" }
+}
